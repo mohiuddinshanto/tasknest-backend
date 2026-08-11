@@ -1,158 +1,77 @@
-import { Request, Response, NextFunction } from 'express';
-import { ObjectId, Filter } from 'mongodb';
+import { Request, Response } from 'express';
+import { ObjectId } from 'mongodb';
 import { getTaskCollection } from '../models/task.model';
-import { ITask } from '../types/task.types';
 
 // 1. Get All Tasks (With Search, Priority & Status Filter)
-export const getTasks = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const tasksCollection = await getTaskCollection();
-    const { search, priority, status } = req.query;
+export const getTasks = async (req: Request, res: Response) => {
+  const tasksCollection = await getTaskCollection();
+  const { search, priority, status } = req.query;
 
-    const filter: Filter<ITask> = {};
+  let query: any = {};
 
-    if (search && typeof search === 'string') {
-      filter.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-      ];
-    }
-
-    if (priority && typeof priority === 'string') {
-      filter.priority = priority as ITask['priority'];
-    }
-
-    if (status && typeof status === 'string') {
-      filter.status = status as ITask['status'];
-    }
-
-    const tasks = await tasksCollection
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .toArray();
-
-    res.status(200).json(tasks);
-  } catch (error) {
-    next(error);
+  if (search) {
+    query.$or = [
+      { title: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } },
+    ];
   }
+
+  if (priority) {
+    query.priority = priority;
+  }
+
+  if (status) {
+    query.status = status;
+  }
+
+  const tasks = await tasksCollection.find(query).sort({ createdAt: -1 }).toArray();
+  res.send(tasks);
 };
 
 // 2. Get Single Task By ID
-export const getTaskById = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { id } = req.params as { id: string };
-
-    if (!id || !ObjectId.isValid(id)) {
-      res.status(400).json({ message: 'Invalid or missing Task ID' });
-      return;
-    }
-
-    const tasksCollection = await getTaskCollection();
-    const task = await tasksCollection.findOne({ _id: new ObjectId(id) });
-
-    if (!task) {
-      res.status(404).json({ message: 'Task not found' });
-      return;
-    }
-
-    res.status(200).json(task);
-  } catch (error) {
-    next(error);
-  }
+export const getTaskById = async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const tasksCollection = await getTaskCollection();
+  const query = { _id: new ObjectId(id) };
+  const task = await tasksCollection.findOne(query);
+  res.send(task);
 };
 
 // 3. Create Task
-export const createTask = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const tasksCollection = await getTaskCollection();
-    const taskData: Omit<ITask, '_id' | 'createdAt' | 'updatedAt'> = req.body;
+export const createTask = async (req: Request, res: Response) => {
+  const tasksCollection = await getTaskCollection();
+  const task = req.body;
 
-    const newTask: ITask = {
-      ...taskData,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+  task.createdAt = new Date();
+  task.updatedAt = new Date();
 
-    const result = await tasksCollection.insertOne(newTask);
-    res.status(201).json({ success: true, insertedId: result.insertedId });
-  } catch (error) {
-    next(error);
-  }
+  const result = await tasksCollection.insertOne(task);
+  res.send(result);
 };
 
 // 4. Update Task
-export const updateTask = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { id } = req.params as { id: string };
+export const updateTask = async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const tasksCollection = await getTaskCollection();
+  const updatedTask = req.body;
 
-    if (!id || !ObjectId.isValid(id)) {
-      res.status(400).json({ message: 'Invalid or missing Task ID' });
-      return;
-    }
+  const filter = { _id: new ObjectId(id) };
+  const updatedDoc = {
+    $set: {
+      ...updatedTask,
+      updatedAt: new Date(),
+    },
+  };
 
-    const tasksCollection = await getTaskCollection();
-    const updatedFields: Partial<ITask> = req.body;
-
-    const result = await tasksCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { ...updatedFields, updatedAt: new Date() } }
-    );
-
-    if (result.matchedCount === 0) {
-      res.status(404).json({ message: 'Task not found' });
-      return;
-    }
-
-    res
-      .status(200)
-      .json({ success: true, modifiedCount: result.modifiedCount });
-  } catch (error) {
-    next(error);
-  }
+  const result = await tasksCollection.updateOne(filter, updatedDoc);
+  res.send(result);
 };
 
 // 5. Delete Task
-export const deleteTask = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { id } = req.params as { id: string };
-
-    if (!id || !ObjectId.isValid(id)) {
-      res.status(400).json({ message: 'Invalid or missing Task ID' });
-      return;
-    }
-
-    const tasksCollection = await getTaskCollection();
-    const result = await tasksCollection.deleteOne({ _id: new ObjectId(id) });
-
-    if (result.deletedCount === 0) {
-      res.status(404).json({ message: 'Task not found' });
-      return;
-    }
-
-    res
-      .status(200)
-      .json({ success: true, message: 'Task deleted successfully' });
-  } catch (error) {
-    next(error);
-  }
+export const deleteTask = async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const tasksCollection = await getTaskCollection();
+  const query = { _id: new ObjectId(id) };
+  const result = await tasksCollection.deleteOne(query);
+  res.send(result);
 };
